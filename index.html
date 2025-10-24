@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>OE匹配查找工具（支持Excel上传）</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.20.0/dist/xlsx.full.min.js"></script>
+  <title>OE匹配查找工具（Excel上传版）</title>
+  <!-- ✅ 使用国内加速 CDN，确保加载成功 -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/xlsx/0.20.0/xlsx.full.min.js"></script>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -57,4 +58,138 @@
       vertical-align: top;
     }
     th {
-      background-color: #f1
+      background-color: #f1f3f5;
+    }
+    .warning {
+      color: #d32f2f;
+      font-weight: bold;
+    }
+    .success {
+      color: #2e7d32;
+    }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 OE 匹配查找工具（Excel上传版）</h1>
+    <p>上传一个 <code>.xlsx</code> 文件，包含三列：<br>
+       <strong>A列</strong>：ID，<strong>B列</strong>：OE列表（可换行），<strong>C列</strong>：OE列表（可换行）</p>
+
+    <input type="file" id="fileInput" accept=".xlsx" />
+    <button onclick="processFile()">🚀 开始处理</button>
+
+    <div id="result"></div>
+  </div>
+
+  <script>
+    function processFile() {
+      const fileInput = document.getElementById('fileInput');
+      const file = fileInput.files[0];
+      if (!file) {
+        alert("请先选择一个 .xlsx 文件！");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          if (json.length === 0) {
+            document.getElementById('result').innerHTML = '<p class="warning">⚠️ 文件为空！</p>';
+            return;
+          }
+
+          const dataRows = [];
+          const bToA = new Map();
+          const bCount = {};
+          const cCount = {};
+
+          for (let i = 0; i < json.length; i++) {
+            const row = json[i];
+            if (!row || row.length === 0) continue;
+
+            const aId = (row[0] ?? '').toString().trim();
+            const bText = (row[1] ?? '').toString().trim();
+            const cText = (row[2] ?? '').toString().trim();
+
+            if (!aId && !bText && !cText) continue;
+
+            const bList = bText.split('\n').map(s => s.trim()).filter(s => s);
+            const cList = cText.split('\n').map(s => s.trim()).filter(s => s);
+
+            for (const b of bList) {
+              if (!bToA.has(b)) {
+                bToA.set(b, aId);
+              }
+              bCount[b] = (bCount[b] || 0) + 1;
+            }
+
+            for (const c of cList) {
+              cCount[c] = (cCount[c] || 0) + 1;
+            }
+
+            dataRows.push({ aId, bList, cList });
+          }
+
+          const bDuplicates = Object.keys(bCount).filter(k => bCount[k] > 1);
+          const cDuplicates = Object.keys(cCount).filter(k => cCount[k] > 1);
+
+          let resultHtml = '<h2>📊 处理结果</h2>';
+
+          if (bDuplicates.length > 0 || cDuplicates.length > 0) {
+            resultHtml += '<div class="warning">';
+            if (bDuplicates.length > 0) {
+              resultHtml += `<p><strong>B列重复项（${bDuplicates.length}个）：</strong> ${bDuplicates.slice(0, 10).join(', ')}${bDuplicates.length > 10 ? '...' : ''}</p>`;
+            }
+            if (cDuplicates.length > 0) {
+              resultHtml += `<p><strong>C列重复项（${cDuplicates.length}个）：</strong> ${cDuplicates.slice(0, 10).join(', ')}${cDuplicates.length > 10 ? '...' : ''}</p>`;
+            }
+            resultHtml += '</div>';
+          } else {
+            resultHtml += '<p class="success">✅ B列和C列均无重复项。</p>';
+          }
+
+          resultHtml += '<h3>匹配详情：</h3>';
+          resultHtml += '<table>';
+          resultHtml += '<thead><tr><th>A ID</th><th>B列值</th><th>C列值</th><th>D列（匹配的A ID）</th></tr></thead><tbody>';
+
+          for (const item of dataRows) {
+            const matches = [];
+            for (const c of item.cList) {
+              if (bToA.has(c)) {
+                matches.push(bToA.get(c));
+              }
+            }
+            const matchStr = matches.length > 0 ? matches.join(', ') : '—';
+
+            resultHtml += `<tr>
+              <td>${item.aId}</td>
+              <td><pre>${item.bList.join('\n')}</pre></td>
+              <td><pre>${item.cList.join('\n')}</pre></td>
+              <td>${matchStr}</td>
+            </tr>`;
+          }
+
+          resultHtml += '</tbody></table>';
+          document.getElementById('result').innerHTML = resultHtml;
+
+        } catch (err) {
+          console.error(err);
+          document.getElementById('result').innerHTML = `<p class="warning">❌ 解析文件失败：${err.message}</p>`;
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+  </script>
+</body>
+</html>
